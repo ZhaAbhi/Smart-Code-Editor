@@ -1,7 +1,9 @@
+import TerminalScreen from "./components/terminal";
+
 function App() {
   return (
     <div>
-      <h1>Smart Code Editor</h1>
+      <TerminalScreen />
     </div>
   );
 }
