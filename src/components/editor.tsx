@@ -1,6 +1,5 @@
 import React from "react";
 import Editor, { OnMount, OnChange } from "@monaco-editor/react";
-import TemporaryDrawer from "./drawer";
 import DrawerScreen from "./drawer";
 
 interface EditorScreenProps {
