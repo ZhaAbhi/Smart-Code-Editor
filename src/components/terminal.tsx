@@ -1,73 +1,143 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Terminal } from "@xterm/xterm";
+import { useState, useRef, useEffect } from "react";
+import { Terminal as XTerminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
-const TerminalScreen = () => {
-  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
-  const terminalRef = useRef(null);
+interface TerminalScreenProps {
+  initialOpen?: boolean;
+}
 
-  const initializeTerminal = () => {
-    // If terminal div exists and terminal instance hasn't been created yet
-    if (terminalRef.current && !terminalRef.current.terminal) {
-      const terminal = new Terminal({
-        cursorBlink: true,
-        theme: {
-          background: "#1e1e1e",
-          foreground: "#ffffff",
-        },
-        fontSize: 14,
-        fontFamily: "monospace",
-        rows: 24,
-        cols: 80,
-      });
+interface TerminalTheme {
+  background: string;
+  foreground: string;
+}
 
-      terminal.open(terminalRef.current);
-      // Store terminal instance directly on the DOM ref
-      terminalRef.current.terminal = terminal;
+interface TerminalOptions {
+  cursorBlink: boolean;
+  rows: number;
+  cols: number;
+  theme: TerminalTheme;
+}
 
-      terminal.writeln("Welcome to the terminal!");
-      terminal.writeln("Type your commands below.");
-      terminal.write("\r\n$ ");
+const TerminalScreen: React.FC<TerminalScreenProps> = ({ initialOpen = false }) => {
+  const [open, setOpen] = useState<boolean>(initialOpen);
+  const terminalRef = useRef<HTMLDivElement | null>(null);
+  const terminalInstance = useRef<XTerminal | null>(null);
+  const currentLineBuffer = useRef<string>("");
 
-      terminal.onData((data) => {
-        // Echo input
-        terminal.write(data);
+  const commands = {
+    help: () => {
+      terminalInstance.current?.writeln("\r\nAvailable commands:");
+      terminalInstance.current?.writeln("  help     - Show this help message");
+      terminalInstance.current?.writeln("  clear    - Clear the terminal");
+      terminalInstance.current?.writeln("  echo     - Echo the provided text");
+      terminalInstance.current?.writeln("  date     - Show current date and time");
+      terminalInstance.current?.writeln("  whoami   - Show current user");
+      terminalInstance.current?.writeln("");
+    },
+    clear: () => {
+      terminalInstance.current?.clear();
+    },
+    echo: (args: string) => {
+      terminalInstance.current?.writeln(`\r\n${args}`);
+    },
+    date: () => {
+      terminalInstance.current?.writeln(`\r\n${new Date().toLocaleString()}`);
+    },
+    whoami: () => {
+      terminalInstance.current?.writeln("\r\nGuest User");
+    },
+  };
 
-        // Handle Enter key
-        if (data === "\r") {
-          terminal.write("\n\r$ ");
-        }
-      });
+  const writePrompt = () => {
+    terminalInstance.current?.write("\r\n$ ");
+  };
+
+  const handleCommand = (command: string) => {
+    const trimmedCommand = command.trim();
+    const [cmd, ...args] = trimmedCommand.split(" ");
+
+    if (trimmedCommand === "") {
+      writePrompt();
+      return;
     }
+
+    if (cmd in commands) {
+      commands[cmd as keyof typeof commands](args.join(" "));
+    } else {
+      terminalInstance.current?.writeln(`\r\nCommand not found: ${cmd}`);
+    }
+
+    writePrompt();
+    currentLineBuffer.current = "";
   };
 
   useEffect(() => {
-    if (isTerminalOpen) {
-      initializeTerminal();
+    if (open && terminalRef.current) {
+      if (!terminalInstance.current) {
+        const options: TerminalOptions = {
+          cursorBlink: true,
+          rows: 22, // Reduced from 24 to leave space at bottom
+          cols: 80,
+          theme: {
+            background: "#000000",
+            foreground: "#ffffff",
+          },
+        };
+
+        terminalInstance.current = new XTerminal(options);
+        terminalInstance.current.open(terminalRef.current);
+
+        // Initial welcome message
+        terminalInstance.current.writeln("Welcome to Smart Code Editor");
+        terminalInstance.current.writeln("Type 'help' to see available commands");
+        writePrompt();
+
+        // Handle user input
+        terminalInstance.current.onKey(({ key, domEvent }) => {
+          const ev = domEvent;
+          const printable = !ev.altKey && !ev.ctrlKey && !ev.metaKey;
+
+          if (ev.keyCode === 13) {
+            // Enter
+            handleCommand(currentLineBuffer.current);
+          } else if (ev.keyCode === 8) {
+            // Backspace
+            if (currentLineBuffer.current.length > 0) {
+              currentLineBuffer.current = currentLineBuffer.current.slice(0, -1);
+              if (terminalInstance.current) {
+                terminalInstance.current.write("\b \b");
+              }
+            }
+          } else if (printable) {
+            currentLineBuffer.current += key;
+            terminalInstance.current?.write(key);
+          }
+        });
+
+        terminalInstance.current.focus();
+      }
     }
 
     return () => {
-      // Clean up using the terminal instance stored on the ref
-      if (terminalRef.current?.terminal) {
-        terminalRef.current.terminal.dispose();
-        terminalRef.current.terminal = null;
+      if (terminalInstance.current) {
+        terminalInstance.current.dispose();
+        terminalInstance.current = null;
       }
     };
-  }, [isTerminalOpen]);
+  }, [open]);
 
-  const toggleTerminal = () => {
-    setIsTerminalOpen(!isTerminalOpen);
+  const handleTerminal = (): void => {
+    setOpen(!open);
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-900 p-4">
-      <button onClick={toggleTerminal} className="mb-4 rounded-lg bg-gray-800 px-6 py-3 text-white hover:bg-gray-700 transition-colors">
-        {isTerminalOpen ? "Close Terminal" : "Open Terminal"}
+    <div className="fixed bottom-0 left-0 right-0">
+      <button onClick={handleTerminal} className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-t hover:bg-blue-700 focus:outline-none">
+        {open ? "Close Terminal" : "Open Terminal"}
       </button>
-
-      {isTerminalOpen && (
-        <div className="w-full max-w-4xl rounded-lg border border-gray-700 bg-gray-800 p-2" style={{ height: "500px" }}>
-          <div ref={terminalRef} className="h-full w-full overflow-auto" />
+      {open && (
+        <div className="relative w-full h-[400px] bg-black rounded-t overflow-hidden">
+          <div ref={terminalRef} className="absolute inset-0 pb-4" /> {/* Added padding bottom */}
         </div>
       )}
     </div>
